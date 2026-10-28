@@ -24,7 +24,7 @@ docker run -d \
   -e SOCKET_DOCKER=/var/run/docker.sock \
   -e SOCKET_PODMAN=/run/podman/podman.sock \
   -e SOCKET_PM2=/root/.pm2/rpc.sock \
-  ghcr.io/scathachgrip/koburi:latest
+  ghcr.io/sinkaroid/koburi:latest
 ```
 
 ### Podman
@@ -43,7 +43,7 @@ podman run -d \
   -e SOCKET_DOCKER=/var/run/docker.sock \
   -e SOCKET_PODMAN=/run/podman/podman.sock \
   -e SOCKET_PM2=/root/.pm2/rpc.sock \
-  ghcr.io/scathachgrip/koburi:latest
+  ghcr.io/sinkaroid/koburi:latest
 ```
 
 ## Endpoints
