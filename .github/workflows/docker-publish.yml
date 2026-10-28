@@ -1,0 +1,135 @@
+name: docker publish
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Containerfile
+        shell: bash
+        run: |
+          cat <<'EOF' > Containerfile
+          # syntax=docker/dockerfile:1.7
+          FROM rust:1.85-alpine AS builder
+          RUN apk add --no-cache musl-dev
+          WORKDIR /build
+          COPY Cargo.toml ./
+          RUN mkdir -p src && \
+              echo "fn main() {}" > src/main.rs && \
+              cargo build --release --target x86_64-unknown-linux-musl && \
+              rm -rf src target/x86_64-unknown-linux-musl/release/deps/koburi*
+          COPY src ./src
+          RUN cargo build --release --target x86_64-unknown-linux-musl && \
+              strip target/x86_64-unknown-linux-musl/release/koburi
+          FROM gcr.io/distroless/static-debian12:nonroot
+          COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/koburi /usr/local/bin/koburi
+          ENV KOBURI_PORT=9911
+          EXPOSE 9911
+          USER nonroot:nonroot
+          ENTRYPOINT ["/usr/local/bin/koburi"]
+          EOF
+
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          push: false
+          tags: koburi:ci-${{ github.sha }}
+          platforms: linux/amd64
+          provenance: false
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from Cargo.toml
+        id: version
+        shell: bash
+        run: |
+          version=$(grep '^version' Cargo.toml | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Detected koburi version $version"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=v${{ steps.version.outputs.version }}
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Create Containerfile inline
+        shell: bash
+        run: |
+          cat <<'EOF' > Containerfile
+          # syntax=docker/dockerfile:1.7
+          FROM rust:1.85-alpine AS builder
+          RUN apk add --no-cache musl-dev
+          WORKDIR /build
+          COPY Cargo.toml ./
+          RUN mkdir -p src && \
+              echo "fn main() {}" > src/main.rs && \
+              cargo build --release --target x86_64-unknown-linux-musl && \
+              rm -rf src target/x86_64-unknown-linux-musl/release/deps/koburi*
+          COPY src ./src
+          RUN cargo build --release --target x86_64-unknown-linux-musl && \
+              strip target/x86_64-unknown-linux-musl/release/koburi
+          FROM gcr.io/distroless/static-debian12:nonroot
+          COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/koburi /usr/local/bin/koburi
+          ENV KOBURI_PORT=9911
+          EXPOSE 9911
+          USER nonroot:nonroot
+          ENTRYPOINT ["/usr/local/bin/koburi"]
+          EOF
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          provenance: false
