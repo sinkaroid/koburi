@@ -2,7 +2,6 @@
 // Override via KOBURI_SOCKET; otherwise try docker, rootful podman,
 // rootless podman. We do NOT keep the connection open; main.rs opens it
 // per request (AGENTS.md rule 3).
-#![allow(dead_code)]
 
 use std::env;
 use std::io;

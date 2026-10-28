@@ -8,19 +8,18 @@
 //   * stream-parse upstream payloads in a bounded buffer; never read_to_string
 //     the whole response into a single growing Vec.
 //   * musl static binary built with the release profile in Cargo.toml.
-#![allow(dead_code)]
 
 use std::env;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
 use std::process;
 use std::thread;
 use std::time::Duration;
 
 mod json;
+#[cfg(any(unix, test))]
 mod stats;
 #[cfg(unix)]
 mod runtime;
@@ -28,6 +27,7 @@ mod runtime;
 use runtime::{Runtime, SocketResolution};
 
 const DEFAULT_PORT: u16 = 9911;
+#[cfg(any(unix, test))]
 const READ_CHUNK: usize = 8 * 1024;
 #[cfg(unix)]
 const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(5);
@@ -147,18 +147,17 @@ fn err_json(w: &mut TcpStream, status: u16, msg: &str) -> io::Result<()> {
 
 // ---------- request orchestration ----------
 
+#[cfg(not(unix))]
+fn serve_stats(writer: &mut TcpStream, _id: Option<&str>) -> io::Result<()> {
+    err_json(writer, 503, "koburi runs on unix only")
+}
+
+#[cfg(unix)]
 fn serve_stats(writer: &mut TcpStream, id: Option<&str>) -> io::Result<()> {
-    #[cfg(not(unix))]
-    {
-        let _ = id;
-        return err_json(writer, 503, "koburi runs on unix only");
-    }
-    #[cfg(unix)]
-    {
-        let resolutions = match runtime::resolve() {
-            Ok(r) => r,
-            Err(e) => return err_json(writer, 503, &format!("runtime: {e}")),
-        };
+    let resolutions = match runtime::resolve() {
+        Ok(r) => r,
+        Err(e) => return err_json(writer, 503, &format!("runtime: {e}")),
+    };
 
         let mut out = String::with_capacity(512);
         out.push('[');
@@ -343,7 +342,6 @@ fn serve_stats(writer: &mut TcpStream, id: Option<&str>) -> io::Result<()> {
         }
 
         write_json(writer, 200, out.as_bytes())
-    }
 }
 
 // ---------- upstream socket client ----------
@@ -402,6 +400,7 @@ fn upstream_get(res: &SocketResolution, path: &str) -> io::Result<Vec<u8>> {
     read_http_response(&mut sock)
 }
 
+#[cfg(any(unix, test))]
 fn read_http_response<R: Read>(sock: &mut R) -> io::Result<Vec<u8>> {
     // Read until we have seen the \r\n\r\n header terminator. Track how many
     // header bytes we consumed so the caller can truncate if it cares; we
@@ -510,6 +509,7 @@ fn read_http_response<R: Read>(sock: &mut R) -> io::Result<Vec<u8>> {
     }
 }
 
+#[cfg(any(unix, test))]
 fn find_double_crlf(buf: &[u8]) -> Option<usize> {
     if buf.len() < 4 {
         return None;
@@ -522,6 +522,7 @@ fn find_double_crlf(buf: &[u8]) -> Option<usize> {
     None
 }
 
+#[cfg(any(unix, test))]
 fn find_crlf(buf: &[u8], from: usize) -> Option<usize> {
     if from >= buf.len() {
         return None;
@@ -536,6 +537,7 @@ fn find_crlf(buf: &[u8], from: usize) -> Option<usize> {
     None
 }
 
+#[cfg(any(unix, test))]
 fn header_content_length(headers: &str) -> Option<usize> {
     for line in headers.split("\r\n").skip(1) {
         let mut it = line.splitn(2, ':');
@@ -548,6 +550,7 @@ fn header_content_length(headers: &str) -> Option<usize> {
     None
 }
 
+#[cfg(any(unix, test))]
 fn header_has(headers: &str, name: &str, expected_value: &str) -> bool {
     for line in headers.split("\r\n").skip(1) {
         let mut it = line.splitn(2, ':');
@@ -562,12 +565,7 @@ fn header_has(headers: &str, name: &str, expected_value: &str) -> bool {
     false
 }
 
-// ---------- small utility accessors used by tests / future endpoints ----------
 
-#[allow(dead_code)]
-fn env_path(name: &str) -> Option<PathBuf> {
-    env::var_os(name).map(PathBuf::from)
-}
 
 #[cfg(test)]
 mod tests {

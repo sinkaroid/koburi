@@ -1,5 +1,4 @@
 // Minimal hand-rolled JSON helpers.
-#![allow(dead_code)]
 //
 // We do NOT use serde or any crate. We only need to:
 //   * parse a small set of well-known shapes from docker/podman responses
@@ -8,10 +7,31 @@
 // For parsing, we use a tiny streaming scanner that finds the next scalar
 // (string / number / bool / null) or object/array start, and exposes
 // helpers to find a value by key inside an object, and to walk arrays.
+pub fn quote_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0C}' => out.push_str("\\f"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
 
-use std::io;
+#[cfg(any(unix, test))]
+mod parser {
+    use std::io;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
     Object,
     Array,
@@ -321,26 +341,10 @@ pub fn unquote(raw: &[u8]) -> io::Result<String> {
     Ok(out)
 }
 
-pub fn quote_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0C}' => out.push_str("\\f"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
+    pub fn parse_f64(s: &[u8]) -> Option<f64> {
+        std::str::from_utf8(s).ok()?.parse().ok()
     }
-    out.push('"');
-    out
 }
 
-pub fn parse_f64(s: &[u8]) -> Option<f64> {
-    std::str::from_utf8(s).ok()?.parse().ok()
-}
+#[cfg(any(unix, test))]
+pub use parser::*;

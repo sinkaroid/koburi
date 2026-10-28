@@ -3,7 +3,6 @@
 // cpu_delta and system_delta come from cpu_stats vs precpu_stats. If the
 // deltas are zero or the system delta is zero, the returned percentage is
 // 0.0 (matches docker behavior, not NaN).
-#![allow(dead_code)]
 
 use std::io;
 
@@ -26,8 +25,8 @@ pub fn parse_container_list(body: &[u8]) -> io::Result<Vec<(String, String, Stri
     let root = match json::classify(body, 0) {
         Some(s) if s.kind == json::Kind::Array => s,
         Some(s) if s.kind == json::Kind::Object => {
-            if let Some(msg_span) = json::object_get(body, s, "message")
-                .or_else(|| json::object_get(body, s, "error"))
+            if let Some(msg_span) =
+                json::object_get(body, s, "message").or_else(|| json::object_get(body, s, "error"))
             {
                 if let Ok(msg) = json::unquote(&body[msg_span.start..msg_span.end]) {
                     return Err(io::Error::new(io::ErrorKind::Other, msg));
@@ -36,13 +35,13 @@ pub fn parse_container_list(body: &[u8]) -> io::Result<Vec<(String, String, Stri
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "list: not an array",
-            ))
+            ));
         }
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "list: not an array",
-            ))
+            ));
         }
     };
     let mut out = Vec::new();
@@ -87,11 +86,16 @@ pub fn parse_container_list(body: &[u8]) -> io::Result<Vec<(String, String, Stri
 pub fn compute(body: &[u8]) -> io::Result<Snapshot> {
     let root = match json::classify(body, 0) {
         Some(s) if s.kind == json::Kind::Object => s,
-        _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "stats: not object")),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "stats: not object",
+            ));
+        }
     };
 
-    if let Some(msg_span) = json::object_get(body, root, "message")
-        .or_else(|| json::object_get(body, root, "error"))
+    if let Some(msg_span) =
+        json::object_get(body, root, "message").or_else(|| json::object_get(body, root, "error"))
     {
         if let Ok(msg) = json::unquote(&body[msg_span.start..msg_span.end]) {
             return Err(io::Error::new(io::ErrorKind::Other, msg));
@@ -140,8 +144,12 @@ fn compute_cpu(
     cpu_stats: Option<json::Span>,
     precpu_stats: Option<json::Span>,
 ) -> (f64, u64) {
-    let Some(cpu) = cpu_stats else { return (0.0, 0) };
-    let Some(precpu) = precpu_stats else { return (0.0, 0) };
+    let Some(cpu) = cpu_stats else {
+        return (0.0, 0);
+    };
+    let Some(precpu) = precpu_stats else {
+        return (0.0, 0);
+    };
 
     let cpu_total = json::object_get(body, cpu, "cpu_usage")
         .and_then(|u| json::object_get(body, u, "total_usage"))
@@ -214,7 +222,11 @@ fn compute_memory(body: &[u8], memory: Option<json::Span>) -> (u64, u64) {
         .and_then(|span| json::parse_f64(&body[span.start..span.end]))
         .unwrap_or(0.0) as u64;
 
-    let usage = if raw_usage > cache { raw_usage - cache } else { raw_usage };
+    let usage = if raw_usage > cache {
+        raw_usage - cache
+    } else {
+        raw_usage
+    };
     (usage, limit)
 }
 
@@ -231,17 +243,25 @@ fn sum_networks(body: &[u8], root: json::Span) -> (u64, u64) {
     let body_inner = &body[networks.start + 1..networks.end - 1];
     let mut i = 0;
     while let Some(start) = json_skip_ws(body_inner, i) {
-        let Some(k) = json::classify(body_inner, start) else { break };
+        let Some(k) = json::classify(body_inner, start) else {
+            break;
+        };
         if k.kind != json::Kind::String {
             break;
         }
         i = k.end;
-        let Some(colon) = json_skip_ws(body_inner, i) else { break };
+        let Some(colon) = json_skip_ws(body_inner, i) else {
+            break;
+        };
         if body_inner.get(colon) != Some(&b':') {
             break;
         }
-        let Some(vstart) = json_skip_ws(body_inner, colon + 1) else { break };
-        let Some(v) = json::classify(body_inner, vstart) else { break };
+        let Some(vstart) = json_skip_ws(body_inner, colon + 1) else {
+            break;
+        };
+        let Some(v) = json::classify(body_inner, vstart) else {
+            break;
+        };
         if v.kind == json::Kind::Object {
             let abs = json::Span {
                 start: networks.start + 1 + v.start,
@@ -376,17 +396,35 @@ pub fn parse_pm2_response(buf: &[u8]) -> io::Result<&[u8]> {
     let version_argc = buf[0];
     let argc = version_argc & 0x0f;
     if argc < 2 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid AMP argc"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid AMP argc",
+        ));
     }
 
     let mut offset = 1;
     // Read Arg 0 (payload)
-    if offset + 4 > buf.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "truncated payload len")); }
-    let len0 = u32::from_be_bytes([buf[offset], buf[offset+1], buf[offset+2], buf[offset+3]]) as usize;
+    if offset + 4 > buf.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "truncated payload len",
+        ));
+    }
+    let len0 = u32::from_be_bytes([
+        buf[offset],
+        buf[offset + 1],
+        buf[offset + 2],
+        buf[offset + 3],
+    ]) as usize;
     offset += 4;
-    if offset + len0 > buf.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "truncated payload data")); }
-    
-    let data = &buf[offset..offset+len0];
+    if offset + len0 > buf.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "truncated payload data",
+        ));
+    }
+
+    let data = &buf[offset..offset + len0];
     if data.starts_with(b"j:") {
         Ok(&data[2..])
     } else {
@@ -408,7 +446,12 @@ pub struct Pm2Process {
 pub fn parse_pm2_list(body: &[u8]) -> io::Result<Vec<Pm2Process>> {
     let root = match json::classify(body, 0) {
         Some(s) if s.kind == json::Kind::Array => s,
-        _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "pm2: not an array")),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "pm2: not an array",
+            ));
+        }
     };
 
     let mut out = Vec::new();
@@ -471,11 +514,7 @@ pub fn parse_pm2_list(body: &[u8]) -> io::Result<Vec<Pm2Process>> {
     Ok(out)
 }
 
-pub fn append_pm2_json(
-    out: &mut String,
-    p: &Pm2Process,
-    host_mem: u64,
-) {
+pub fn append_pm2_json(out: &mut String, p: &Pm2Process, host_mem: u64) {
     use std::fmt::Write;
 
     let mut uptime_str = p.status.clone();
@@ -530,20 +569,29 @@ mod tests {
         let body: &[u8] = br#"[{"Id":"abc123def456abc123def456abc123def456abc123def456abc123def456abc1","Names":["/foo","/foo2"],"Image":"x:latest"},{"Id":"789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789g","Names":["/bar"],"Image":"y:latest"}]"#;
         let r = parse_container_list(body).unwrap();
         assert_eq!(r.len(), 2, "want 2 got {:?}", r);
-        assert_eq!(r[0].0, "abc123def456abc123def456abc123def456abc123def456abc123def456abc1");
+        assert_eq!(
+            r[0].0,
+            "abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+        );
         assert_eq!(r[0].1, "foo");
         assert_eq!(r[0].2, "");
-        assert_eq!(r[1].0, "789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789g");
+        assert_eq!(
+            r[1].0,
+            "789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789ghi789g"
+        );
         assert_eq!(r[1].1, "bar");
         assert_eq!(r[1].2, "");
     }
 
     #[test]
     fn parses_real_daemon_head() {
-        let body: &[u8] = br#"[{"Id":"e1e5e714b23abce23d54d664ff709bdfb9794c84e88ae49842b0dde221f2dea5","Names":["/koburi"],"Image":"ghcr.io/scathachgrip/koburi:latest","ImageID":"sha256:5f7cdc48afec65c53313d59bb0b6682cc5e6ef54147f85bcab44514bbdc78fcc","ImageManifestDescriptor":{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:5f7cdc48afec65c53313d59bb0b6682cc5e6ef54147f85bcab44514bbdc78fcc","size":274}}]"#;
+        let body: &[u8] = br#"[{"Id":"e1e5e714b23abce23d54d664ff709bdfb9794c84e88ae49842b0dde221f2dea5","Names":["/koburi"],"Image":"ghcr.io/sinkaroid/koburi:latest","ImageID":"sha256:5f7cdc48afec65c53313d59bb0b6682cc5e6ef54147f85bcab44514bbdc78fcc","ImageManifestDescriptor":{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:5f7cdc48afec65c53313d59bb0b6682cc5e6ef54147f85bcab44514bbdc78fcc","size":274}}]"#;
         let r = parse_container_list(body).unwrap();
         assert_eq!(r.len(), 1, "want 1, got {:?}", r);
-        assert_eq!(r[0].0, "e1e5e714b23abce23d54d664ff709bdfb9794c84e88ae49842b0dde221f2dea5");
+        assert_eq!(
+            r[0].0,
+            "e1e5e714b23abce23d54d664ff709bdfb9794c84e88ae49842b0dde221f2dea5"
+        );
         assert_eq!(r[0].1, "koburi");
         assert_eq!(r[0].2, "");
     }
@@ -553,7 +601,10 @@ mod tests {
         let body: &[u8] = br#"[{"Id":"aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44","Names":["/app"],"Image":"x","ImageID":"sha256:aaa","ImageManifestDescriptor":{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:aaa","size":1,"platform":{"architecture":"amd64","os":"linux"}},"Ports":[{"IP":"::","PrivatePort":8001,"PublicPort":8001,"Type":"tcp"}],"Labels":{"x":"y"},"State":"running","Status":"Up 11 days","HostConfig":{"NetworkMode":"d"},"Health":{"Status":"none","FailingStreak":0},"NetworkSettings":{"Networks":{"d":{"IPAMConfig":null,"Links":null,"Aliases":null,"DriverOpts":null,"GwPriority":0,"NetworkID":"n","EndpointID":"e","Gateway":"172.18.0.1","IPAddress":"172.18.0.2","MacAddress":"aa:bb:cc:dd:ee:ff","IPPrefixLen":16,"IPv6Gateway":"","GlobalIPv6Address":"","GlobalIPv6PrefixLen":0,"DNSNames":null}}},"Mounts":[]}]"#;
         let r = parse_container_list(body).unwrap();
         assert_eq!(r.len(), 1, "want 1, got {:?}", r);
-        assert_eq!(r[0].0, "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44");
+        assert_eq!(
+            r[0].0,
+            "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44"
+        );
         assert_eq!(r[0].1, "app");
         assert_eq!(r[0].2, "Up 11 days");
     }
@@ -592,7 +643,7 @@ mod tests {
     fn parses_pm2_response_bytes() {
         let mut resp = Vec::new();
         resp.push(0x12); // version 1, argc = 2
-        
+
         // Arg 0: j:{"args":[[{"pid": 123}]]}
         let payload = b"j:{\"args\":[[{\"pid\": 123}]]}";
         resp.extend_from_slice(&(payload.len() as u32).to_be_bytes());
@@ -604,5 +655,45 @@ mod tests {
 
         let data = parse_pm2_response(&resp).unwrap();
         assert_eq!(data, b"{\"args\":[[{\"pid\": 123}]]}");
+    }
+
+    #[test]
+    fn formats_append_json() {
+        let snap = Snapshot {
+            cpu_perc: 12.34,
+            mem_usage: 100 * 1024 * 1024,
+            mem_limit: 1000 * 1024 * 1024,
+            mem_perc: 10.0,
+            net_rx: 1024,
+            net_tx: 2048,
+            block_read: 4096,
+            block_write: 8192,
+            pids: 4,
+        };
+        let mut out = String::new();
+        append_json(&mut out, "cid", "myname", "Up 2 hours", "docker", &snap);
+        assert!(out.contains(r#""ID":"cid""#));
+        assert!(out.contains(r#""Name":"myname""#));
+        assert!(out.contains(r#""CPUPerc":"12.34%""#));
+        assert!(out.contains(r#""MemPerc":"10.00%""#));
+        assert!(out.contains(r#""PIDs":4"#));
+    }
+
+    #[test]
+    fn formats_append_pm2_json() {
+        let p = Pm2Process {
+            name: "app".to_string(),
+            pm_id: 0,
+            pid: 1234,
+            cpu: 1.5,
+            memory: 50 * 1024 * 1024,
+            pm_uptime: 0,
+            status: "online".to_string(),
+        };
+        let mut out = String::new();
+        append_pm2_json(&mut out, &p, 1000 * 1024 * 1024);
+        assert!(out.contains(r#""Name":"app""#));
+        assert!(out.contains(r#""Runtime":"pm2""#));
+        assert!(out.contains(r#""CPUPerc":"1.50%""#));
     }
 }
